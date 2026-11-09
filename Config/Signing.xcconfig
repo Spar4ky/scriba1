@@ -1,0 +1,17 @@
+// ------------------------------------------------------------------
+//  Skryba – ustawienia podpisywania (jedyne miejsce do edycji)
+// ------------------------------------------------------------------
+//
+//  APP_BUNDLE_ID musi byc unikalny w skali calego Apple.
+//  Jesli Xcode pokaze blad "Failed to register bundle identifier",
+//  zmien go na cos swojego, np. pl.jankowalski.skryba
+//
+APP_BUNDLE_ID = pl.skryba.jt4k9x
+
+// Wspolny kontener aplikacji i rozszerzenia "Transkrybuj" (App Group).
+// Nie zmieniaj – wylicza sie sam z APP_BUNDLE_ID.
+APP_GROUP_ID = group.$(APP_BUNDLE_ID)
+
+// Opcjonalnie: wpisz swoj Team ID (Xcode > Settings > Accounts),
+// wtedy nie trzeba wybierac zespolu recznie w obu targetach.
+// DEVELOPMENT_TEAM = ABCDE12345
