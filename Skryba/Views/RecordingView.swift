@@ -44,13 +44,14 @@ struct RecordingView: View {
                 titleField
                 controls
                     .padding(.top, 30)
-                Text("Możesz zablokować ekran albo przejść do innej aplikacji – nagrywanie trwa w tle, nawet kilka godzin. Po zakończeniu transkrypcja ruszy sama.")
+                Text("Możesz zablokować ekran albo przejść do innej aplikacji – nagrywanie trwa w tle, nawet kilka godzin. Po zakończeniu transkrypcja ruszy sama.\(DeviceNames.isPad ? " Skróty: ⌘P pauza, ⌘⏎ zakończ." : "")")
                     .font(.footnote)
                     .foregroundStyle(.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .padding(.top, 22)
                     .padding(.bottom, 10)
             }
+            .frame(maxWidth: 640)
             .padding(.horizontal, 22)
         }
         .preferredColorScheme(.dark)
@@ -153,6 +154,7 @@ struct RecordingView: View {
                     .frame(width: 66, height: 66)
                     .background(Color.white.opacity(0.12), in: Circle())
             }
+            .keyboardShortcut("p", modifiers: .command)
             .accessibilityLabel(isPaused ? "Wznów nagrywanie" : "Wstrzymaj nagrywanie")
 
             Button {
@@ -172,6 +174,7 @@ struct RecordingView: View {
                         .frame(width: 30, height: 30)
                 }
             }
+            .keyboardShortcut(.return, modifiers: .command)
             .accessibilityLabel("Zakończ i zrób transkrypcję")
 
             VStack(spacing: 4) {

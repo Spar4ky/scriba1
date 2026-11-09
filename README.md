@@ -1,115 +1,100 @@
-# Skryba – nagrywanie i transkrypcja wykładów (iOS)
+# Skryba – nagrywanie i transkrypcja wykładów (iPhone i iPad)
 
 Nagrywasz wykład → po zatrzymaniu Skryba od razu robi transkrypcję → jednym przyciskiem
 kopiujesz cały tekst. Możesz też udostępnić nagranie z Dyktafonu prosto do Skryby.
 
+Wersja 1.1: pełna wersja na iPada, naprawione udostępnianie z Dyktafonu, widoczny postęp
+przygotowania modelu i dziennik diagnostyczny.
+
 ## Co potrafi
 
-- **Nagrywanie** z animowanym wykresem głośności, pauzą i nazwą nagrania. Działa przy
-  zablokowanym ekranie i wznawia się samo po rozmowie telefonicznej.
-- **Transkrypcja od razu po zatrzymaniu**, z podglądem tekstu na żywo i paskiem postępu.
-- **„Kopiuj całość”** – cały tekst trafia do schowka. W Ustawieniach możesz włączyć
-  automatyczne kopiowanie i znaczniki czasu `[mm:ss]`.
+- **Nagrywanie** z wykresem głośności, pauzą i nazwą nagrania. Działa przy zablokowanym
+  ekranie (nawet kilka godzin) i wznawia się samo po rozmowie telefonicznej.
+- **Transkrypcja od razu po zatrzymaniu** (Whisper na urządzeniu, bez internetu),
+  z podglądem tekstu na żywo i paskiem postępu.
+- **„Kopiuj całość”** – cały tekst trafia do schowka (na iPadzie z klawiaturą: ⌘⇧C).
 - **Udostępnianie z Dyktafonu**: Dyktafon → nagranie → Udostępnij → **Skryba**.
-- **Odtwarzacz**: dotknięcie czasu przy akapicie odtwarza nagranie od tego miejsca,
-  prędkość 0,75–2×, przeskok o 15 s.
-- Edycja tekstu, eksport do `.txt`, udostępnianie audio, wyszukiwarka, ponowna
-  transkrypcja w innym języku.
-- Przerwana transkrypcja (brak internetu, zamknięta aplikacja) **wznawia się od miejsca
-  przerwania**.
+- **Folder „Skryba” w aplikacji Pliki**: każde nagranie zapisane w tym folderze Skryba sama
+  doda i przepisze przy otwarciu.
+- **iPad**: lista nagrań obok transkrypcji, dowolne okno i orientacja, skróty klawiszowe
+  (⌘R nagraj, ⌘O importuj, ⌘, ustawienia, ⌘P pauza, ⌘⏎ zakończ nagrywanie).
+- Odtwarzacz (dotknij czasu przy akapicie), edycja tekstu, eksport `.txt`, wyszukiwarka,
+  ponowna transkrypcja w innym języku, wznawianie przerwanej transkrypcji.
 
-## Instalacja na iPhonie (ok. 10 minut, za darmo)
+## Instalacja bez Maca (GitHub + Sideloadly na Windowsie)
 
-Potrzebujesz: **Maca z Xcode 26 lub nowszym** (darmowy w App Store), **iPhone’a z iOS 17+**
-(najlepiej iOS 26/27), kabla USB i swojego **Apple ID**.
+1. Wgraj **całą zawartość** tego folderu do repozytorium na GitHubie (razem z ukrytym
+   folderem `.github`). Przy aktualizacji wgraj pliki ponownie – nadpiszą stare.
+2. Zakładka **Actions** → „Zbuduj IPA” (ruszy samo po wgraniu albo **Run workflow**).
+   Po ok. 15–20 minutach pobierz artefakt **Skryba-ipa** i rozpakuj go. W środku są dwa pliki:
+   - **`Skryba.ipa`** – właściwy (z uprawnieniem App Group dla udostępniania z Dyktafonu),
+   - `Skryba-zapasowa-bez-AppGroup.ipa` – tylko gdyby Sideloadly pokazał błąd przy pierwszym.
+3. **Sideloadly** → przeciągnij `Skryba.ipa`, wpisz Apple ID → **Start**. Aktualizacja nie
+   kasuje nagrań – nie usuwaj wcześniej starej Skryby.
+4. Na urządzeniu: **Tryb dewelopera** (Ustawienia → Prywatność i ochrona) oraz
+   Ustawienia → Ogólne → VPN i urządzenia → zaufaj swojemu Apple ID.
 
-1. Rozpakuj ZIP i otwórz `Skryba.xcodeproj`.
-2. Xcode → **Settings → Accounts** → „+” → Apple ID → zaloguj się.
-3. Kliknij niebieską ikonę projektu **Skryba** (lewy panel) → target **Skryba** →
-   karta **Signing & Capabilities** → **Team**: wybierz „Twoje Imię (Personal Team)”.
-   **To samo zrób dla targetu `SkrybaShare`.**
-4. Podłącz iPhone’a, odblokuj go i dotknij „Zaufaj”. Wybierz iPhone’a na górnym pasku Xcode.
-5. Naciśnij ▶︎ (Cmd+R).
-6. Na iPhonie: **Ustawienia → Prywatność i ochrona → Tryb dewelopera → Włącz** (telefon się
-   zrestartuje). Jeśli iPhone pokaże „Niezaufany deweloper”: **Ustawienia → Ogólne → VPN
-   i zarządzanie urządzeniem →** Twój Apple ID **→ Ufaj**.
+> Z darmowym Apple ID aplikacja działa **7 dni** – potem powtórz krok 3 (nagrania zostają).
 
-> Z darmowym kontem aplikacja działa **7 dni** – potem podłącz iPhone’a i jeszcze raz naciśnij ▶︎
-> (nagrania i transkrypcje zostają). Płatne konto Apple Developer (99 USD/rok) daje rok
-> ważności i TestFlight.
+## Instalacja z Maca (Xcode 26+)
 
-## Transkrypcja – Whisper na iPhonie
+1. Otwórz `Skryba.xcodeproj`, poczekaj na pobranie pakietu WhisperKit.
+2. Xcode → Settings → Accounts → dodaj Apple ID.
+3. Target **Skryba** i **SkrybaShare** → Signing & Capabilities → **Team**: Twoje konto.
+4. Wybierz iPhone’a lub iPada na górnym pasku i naciśnij ▶︎.
 
-Domyślnie Skryba używa **Whispera uruchomionego bezpośrednio na iPhonie** (biblioteka
-[WhisperKit](https://github.com/argmaxinc/argmax-oss-swift)). Żadnych kont, kluczy ani opłat,
-a nagrania nie opuszczają telefonu.
+Jeśli Xcode zgłosi zajęty identyfikator, zmień `APP_BUNDLE_ID` w `Config/Signing.xcconfig`.
 
-- **Model pobiera się raz** przy pierwszej transkrypcji albo przyciskiem w Ustawieniach
-  („Pobierz model teraz”). Najlepiej przez Wi-Fi, przy otwartej aplikacji.
-  - **Dokładny** (Large v3, ok. 630 MB) – najlepszy dla polskiego, domyślny na iPhone’ach z 6 GB+ RAM.
-  - **Szybki** (Small, ok. 250 MB) – ok. 3× szybszy, ale mniej dokładny; domyślny na starszych.
-- **Pierwsze uruchomienie modelu** trwa dłużej (iOS przygotowuje go pod Twój procesor) – potem
-  startuje w kilka sekund.
-- **Czas:** godzinny wykład to zwykle 5–15 minut na iPhonie 13 lub nowszym. Ekran nie gaśnie,
-  dopóki transkrypcja trwa. Jeśli wyjdziesz z aplikacji, wznowi się od ostatniego fragmentu.
-- Alternatywa w Ustawieniach: **rozpoznawanie mowy Apple** (szybsze, ale dla polskiego idzie
-  przez serwery Apple i słabiej radzi sobie z dźwiękiem z sali).
+## Pierwsza transkrypcja – przygotowanie modelu
 
-> Przy pierwszym otwarciu projektu Xcode pobierze bibliotekę WhisperKit (potrzebny internet,
-> chwilę to trwa – widać to na pasku stanu Xcode).
+Whisper działa w całości na urządzeniu. Za pierwszym razem:
+
+1. **Pobiera model** (Dokładny ok. 630 MB, Szybki ok. 250 MB) – najlepiej przez Wi-Fi.
+2. **Przygotowuje go pod procesor** (Core ML) – jednorazowo, zwykle 1–5 minut, model Dokładny
+   czasem dłużej. Na karcie transkrypcji widać licznik czasu. Jeśli trwa to zbyt długo,
+   pojawi się przycisk **„Użyj modelu Szybki”**.
+
+Kolejne transkrypcje ruszają od razu. Model możesz też pobrać i przygotować wcześniej:
+Ustawienia → Whisper → **Pobierz i przygotuj model**. Godzinny wykład to zwykle 5–15 minut
+transkrypcji – zostaw wtedy Skrybę otwartą (ekran nie gaśnie sam).
 
 ## Udostępnianie z Dyktafonu
 
-1. Dyktafon → wybierz nagranie → **•••** (albo ikona udostępniania) → **Udostępnij**.
-2. Wybierz:
-   - **Skryba** – aplikacja otworzy się i od razu zrobi transkrypcję,
-   - **Transkrybuj** – nagranie zapisze się w tle; otwórz Skrybę albo dotknij powiadomienia.
-3. Nie widzisz ikony? Przewiń rząd aplikacji do końca → **Więcej** → włącz Skrybę.
+1. Dyktafon → wybierz nagranie → **Udostępnij** → **Skryba**.
+2. Jeśli Skryba poprosi o folder (tylko za pierwszym razem i tylko wtedy, gdy instalacja nie
+   dostała App Group): wejdź do **Na moim iPadzie / iPhonie → Skryba** i dotknij **Otwórz**.
+3. Otwórz Skrybę albo dotknij powiadomienia – nagranie doda się samo i ruszy transkrypcja.
 
-Działa też z aplikacją Pliki, WhatsAppem itp. (każdy plik audio lub wideo) oraz przez
-przycisk importu w samej Skrybie.
+Zawsze działa też: Udostępnij → **Zachowaj w Plikach** → Na moim iPadzie → **Skryba** → Zapisz.
+Do folderu Skryby możesz też kopiować pliki z komputera (iTunes/Finder → Udostępnianie plików).
 
-## Rozwiązywanie problemów
+## Gdy coś nie działa
 
-- **„Failed to register bundle identifier” / „App ID is not available”** – otwórz
-  `Config/Signing.xcconfig` i zmień `APP_BUNDLE_ID` na coś unikalnego, np.
-  `pl.jankowalski.skryba`. Oba targety same pobiorą nową wartość.
-- **Błąd podpisywania wspominający „App Groups”** – w obu targetach: Signing & Capabilities →
-  sekcja App Groups → ikona kosza. Aplikacja zadziała; z Dyktafonu używaj opcji **Skryba**.
-- **„Nie udało się uruchomić modelu Whisper”** – na starszym iPhonie wybierz w Ustawieniach
-  model „Szybki”.
-- **Xcode: „Missing package product WhisperKit”** – File → Packages → Reset Package Caches
-  (potrzebny internet).
-- **„Rozpoznawanie mowy Apple zgłosiło błąd”** (tylko silnik Apple) – sprawdź internet i włącz
-  dyktowanie: Ustawienia → Ogólne → Klawiatura → Włącz dyktowanie.
-- **Xcode starszy niż 26** – projekt się zbuduje, ale bez nowego silnika Apple i bez efektu
-  Liquid Glass.
-- **Jakikolwiek błąd kompilacji** – skopiuj jego treść z Xcode (panel Issues) i wyślij mi.
-
-## Nie masz Maca?
-
-- Najprościej: pożycz Maca na 15 minut (znajomy, pracownia na uczelni).
-- Albo zbuduj w chmurze: wrzuć ten folder do repozytorium na GitHubie → zakładka **Actions** →
-  **Zbuduj IPA** → **Run workflow** → pobierz artefakt `Skryba.ipa` i zainstaluj go programem
-  **Sideloadly** (Windows/macOS) ze swoim Apple ID. Przy tej metodzie rozszerzenie
-  „Transkrybuj” może nie działać – używaj opcji **Skryba**.
+- **Ustawienia → Diagnostyka → Dziennik zdarzeń** – zapis pobierania i przygotowania modelu,
+  transkrypcji, importów i błędów. Zrób zrzut ekranu i wyślij go autorowi.
+- **„Nie udało się uruchomić modelu Whisper”** – wybierz w Ustawieniach model „Szybki”.
+- **Sideloadly zgłasza błąd przy instalacji** – użyj pliku `Skryba-zapasowa-bez-AppGroup.ipa`;
+  nagrania z Dyktafonu przekażesz wtedy przez folder Skryba (Skryba sama o niego poprosi).
+- **Błąd budowania na GitHubie** – otwórz czerwony krzyżyk w zakładce Actions, zrób zrzut
+  ekranu z treścią błędu i wyślij go.
 
 ## Prywatność
 
-Nagrania i transkrypcje są zapisane tylko na Twoim iPhonie. Whisper działa w całości na telefonie.
-Dźwięk opuszcza iPhone’a tylko wtedy, gdy wybierzesz silnik Apple dla języka, którego Apple nie
-obsługuje offline (wtedy trafia do serwerów Apple).
+Nagrania i transkrypcje są zapisane tylko na Twoim urządzeniu. Whisper działa w całości
+lokalnie. Dźwięk opuszcza urządzenie tylko wtedy, gdy wybierzesz silnik Apple dla języka,
+którego Apple nie obsługuje offline.
 
 ## Struktura projektu
 
 ```
-Skryba/                aplikacja (SwiftUI, iOS 17+)
-  AppModel.swift       stan aplikacji, nagrywanie, import, kopiowanie
+Skryba/                aplikacja (SwiftUI, iOS 17+, iPhone i iPad)
+  AppModel.swift       stan aplikacji, nagrywanie, importy, kopiowanie
   Audio/               nagrywanie, odtwarzacz, import plików, dekodowanie i cięcie w ciszy
-  Transcription/       silniki: Whisper na iPhonie (WhisperKit), Apple SpeechAnalyzer (iOS 26+),
-                       Apple SFSpeechRecognizer + kolejka z punktami kontrolnymi
+  Models/              biblioteka nagrań, ustawienia, dziennik diagnostyczny
+  Transcription/       Whisper na urządzeniu (WhisperKit), silniki Apple, kolejka z wznawianiem
   Views/               ekrany: biblioteka, nagrywanie, szczegóły, ustawienia
-SkrybaShare/           rozszerzenie „Transkrybuj” (arkusz udostępniania)
-Shared/                kod wspólny dla aplikacji i rozszerzenia
+SkrybaShare/           rozszerzenie „Skryba” w arkuszu udostępniania
+Shared/                kod wspólny: App Group, folder Skryba, kolory
 Config/                Info.plist, uprawnienia, Signing.xcconfig (identyfikator aplikacji)
+.github/workflows/     budowanie pliku .ipa na GitHubie
 ```

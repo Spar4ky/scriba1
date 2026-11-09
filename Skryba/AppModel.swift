@@ -25,7 +25,8 @@ final class AppModel {
     let transcriber: TranscriptionManager
     let recorder: Recorder
 
-    var path: [UUID] = []
+    /// Otwarte nagranie (na iPadzie widoczne obok listy, na iPhonie jako osobny ekran).
+    var selectedID: UUID?
     var isRecorderPresented = false
     var isSettingsPresented = false
     var isImporterPresented = false
@@ -33,8 +34,6 @@ final class AppModel {
     var busyMessage = "Dodaję nagranie…"
     var toast: Toast?
     var alert: AppAlert?
-    /// Postęp ręcznego pobierania modelu Whisper (nil = nic się nie pobiera).
-    var modelDownloadProgress: Double?
     /// Zwiększane po pobraniu/usunięciu modelu, żeby widoki odświeżyły stan.
     var modelRevision = 0
 
@@ -45,7 +44,9 @@ final class AppModel {
 
     @ObservationIgnored private var activeRecordingID: UUID?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
-    @ObservationIgnored private var isImportingInbox = false
+    @ObservationIgnored private var isImportingIncoming = false
+    /// Pliki z folderu Skryba, których nie dało się dodać (żeby nie próbować w kółko).
+    @ObservationIgnored private var failedDropFiles: Set<String> = []
     @ObservationIgnored private var isActive = true
 
     init() {
@@ -59,6 +60,9 @@ final class AppModel {
         recorder.onTerminate = { [weak self] duration in
             self?.persistInterruptedRecording(duration: duration)
         }
+        WhisperStorage.migrateIfNeeded(variants: WhisperModels.all.map(\.id))
+        DropFolder.prepare()
+        DiagnosticsLog.add("Start Skryby \(DeviceInfo.appVersion) · \(DeviceInfo.summary) · App Group: \(AppGroup.statusDescription)")
         recoverInterruptedRecordings()
     }
 
@@ -73,7 +77,7 @@ final class AppModel {
         guard granted else {
             alert = AppAlert(
                 title: "Brak dostępu do mikrofonu",
-                message: "Włącz mikrofon dla Skryby w Ustawieniach iPhone’a, żeby nagrywać wykłady.",
+                message: "Włącz mikrofon dla Skryby w Ustawieniach \(DeviceNames.genitive), żeby nagrywać wykłady.",
                 offersSettings: true
             )
             return
@@ -88,7 +92,7 @@ final class AppModel {
             isRecorderPresented = false
             alert = AppAlert(
                 title: "Za mało miejsca",
-                message: "Na iPhonie zostało mniej niż 400 MB. Długi wykład może się nie zmieścić – zwolnij miejsce i spróbuj ponownie."
+                message: "Na \(DeviceNames.locative) zostało mniej niż 400 MB. Długi wykład może się nie zmieścić – zwolnij miejsce i spróbuj ponownie."
             )
             return
         }
@@ -206,7 +210,7 @@ final class AppModel {
         case .active:
             isActive = true
             transcriber.appDidBecomeActive()
-            importFromShareExtension()
+            importIncoming()
         case .background:
             isActive = false
             transcriber.appDidEnterBackground()
@@ -215,13 +219,18 @@ final class AppModel {
         }
     }
 
-    // MARK: - Import (Pliki, „Otwórz w…”, rozszerzenie „Transkrybuj”)
+    // MARK: - Import (Pliki, „Otwórz w…”, rozszerzenie udostępniania, folder Skryba)
 
     func handleOpenURL(_ url: URL) {
         if url.isFileURL {
-            Task { await importFiles([url], source: .shared) }
+            if DropFolder.contains(url) {
+                // Plik z folderu Skryba – dodajemy go razem z resztą folderu (bez duplikatów).
+                importIncoming()
+            } else {
+                Task { await importFiles([url], source: .shared) }
+            }
         } else {
-            importFromShareExtension()
+            importIncoming()
         }
     }
 
@@ -245,25 +254,41 @@ final class AppModel {
         }
     }
 
-    func importFromShareExtension() {
-        guard !isImportingInbox else { return }
-        let items = Inbox.pendingItems()
-        guard !items.isEmpty else { return }
-        isImportingInbox = true
+    /// Zabiera nagrania przekazane z zewnątrz: z rozszerzenia udostępniania (App Group)
+    /// i z folderu „Skryba” w aplikacji Pliki. Każde od razu trafia do transkrypcji.
+    func importIncoming() {
+        guard !isImportingIncoming else { return }
+        let inboxItems = Inbox.pendingItems()
+        let folderFiles = DropFolder.pendingFiles().filter { !failedDropFiles.contains($0.path) }
+        guard !inboxItems.isEmpty || !folderFiles.isEmpty else { return }
+        isImportingIncoming = true
         isImporting = true
+        DiagnosticsLog.add("Import: \(inboxItems.count) z rozszerzenia, \(folderFiles.count) z folderu Skryba")
         Task { [weak self] in
             guard let self else { return }
             var lastImported: UUID?
-            for item in items {
+            for item in inboxItems {
                 do {
                     lastImported = try await self.importAudio(at: item.audioURL, title: item.manifest.title, source: .shared)
                 } catch {
-                    self.presentError("Nie udało się dodać nagrania z Dyktafonu. \(error.localizedDescription)")
+                    DiagnosticsLog.add("Błąd importu z rozszerzenia: \(error.localizedDescription)")
+                    self.presentError("Nie udało się dodać nagrania z Dyktafonu. \(SkrybaError.describe(error))")
                 }
                 Inbox.remove(item)
             }
+            for file in folderFiles {
+                do {
+                    lastImported = try await self.importAudio(at: file, title: nil, source: .shared)
+                    try? FileManager.default.removeItem(at: file)
+                } catch {
+                    DiagnosticsLog.add("Błąd importu z folderu (\(file.lastPathComponent)): \(error.localizedDescription)")
+                    self.failedDropFiles.insert(file.path)
+                    DropFolder.moveToFailed(file)
+                    self.presentError("Nie udało się dodać pliku „\(file.lastPathComponent)” z folderu Skryba – plik trafił do podfolderu „\(DropFolder.failedFolderName)”. \(SkrybaError.describe(error))")
+                }
+            }
             self.isImporting = false
-            self.isImportingInbox = false
+            self.isImportingIncoming = false
             if let lastImported {
                 self.open(lastImported, afterDelay: false)
             }
@@ -298,7 +323,7 @@ final class AppModel {
                 try? await Task.sleep(nanoseconds: 450_000_000)
             }
             self?.isSettingsPresented = false
-            self?.path = [id]
+            self?.selectedID = id
         }
     }
 
@@ -318,7 +343,9 @@ final class AppModel {
         if transcriber.isQueuedOrActive(id) {
             transcriber.cancel(id)
         }
-        path.removeAll { $0 == id }
+        if selectedID == id {
+            selectedID = nil
+        }
         store.delete(id)
         showToast("Usunięto nagranie", icon: "trash.fill")
     }
@@ -360,23 +387,19 @@ final class AppModel {
 
     // MARK: - Model Whisper
 
-    func downloadModel(_ variant: String) {
-        guard modelDownloadProgress == nil else { return }
-        modelDownloadProgress = 0
+    /// Pobiera model i od razu go przygotowuje, żeby pierwsza transkrypcja ruszyła bez czekania.
+    func prepareModel(_ variant: String) {
+        guard !ModelStatus.shared.isBusy else { return }
         Task { [weak self] in
             do {
-                _ = try await WhisperModelHost.ensureDownloaded(variant: variant) { fraction in
-                    Task { @MainActor in
-                        guard let self, self.modelDownloadProgress != nil else { return }
-                        self.modelDownloadProgress = fraction
-                    }
-                }
-                self?.modelDownloadProgress = nil
+                _ = try await WhisperModelHost.shared.pipeline(for: variant)
                 self?.modelRevision += 1
-                self?.showToast("Model Whisper pobrany", icon: "checkmark.circle.fill")
+                self?.showToast("Model \(WhisperModels.name(for: variant)) gotowy do pracy", icon: "checkmark.circle.fill")
             } catch {
-                self?.modelDownloadProgress = nil
-                self?.presentError(SkrybaError.describe(error))
+                self?.modelRevision += 1
+                if !(error is CancellationError) {
+                    self?.presentError(SkrybaError.describe(error))
+                }
             }
         }
     }
@@ -385,9 +408,19 @@ final class AppModel {
         Task {
             await WhisperModelHost.shared.unload()
             WhisperModelHost.delete(variant)
+            ModelStatus.shared.reset()
             modelRevision += 1
+            DiagnosticsLog.add("Usunięto model \(WhisperModels.name(for: variant))")
             showToast("Usunięto model", icon: "trash.fill")
         }
+    }
+
+    /// Gdy przygotowanie dokładnego modelu trwa zbyt długo: przełącz na szybki i zacznij od nowa.
+    func switchToFastModel(for id: UUID) {
+        UserDefaults.standard.set(WhisperModels.fast, forKey: SettingsKey.whisperModel)
+        DiagnosticsLog.add("Przełączono na model Szybki")
+        transcriber.restart(id)
+        showToast("Przełączono na model Szybki", icon: "hare.fill")
     }
 
     // MARK: - Komunikaty

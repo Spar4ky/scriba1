@@ -40,9 +40,12 @@ struct RecordingDetailView: View {
                     player: player
                 )
             }
+            // Na szerokim ekranie iPada tekst nie rozlewa się na całą szerokość – łatwiej się czyta.
+            .frame(maxWidth: DetailLayout.maxContentWidth, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle(recording.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -154,6 +157,11 @@ struct RecordingDetailView: View {
     }
 }
 
+enum DetailLayout {
+    /// Maksymalna szerokość treści (wygodna długość wiersza na iPadzie).
+    static let maxContentWidth: CGFloat = 760
+}
+
 // MARK: - Nagłówek
 
 struct DetailHeader: View {
@@ -197,6 +205,7 @@ struct CopyBar: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Brand.indigo)
+            .keyboardShortcut("c", modifiers: [.command, .shift])
 
             ShareLink(item: shareText, subject: Text(title)) {
                 Image(systemName: "square.and.arrow.up")
@@ -208,9 +217,11 @@ struct CopyBar: View {
             .controlSize(.large)
             .accessibilityLabel("Udostępnij tekst")
         }
+        .frame(maxWidth: DetailLayout.maxContentWidth)
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
         .background(.bar)
     }
 }

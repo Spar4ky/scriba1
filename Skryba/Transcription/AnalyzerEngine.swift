@@ -3,7 +3,7 @@ import AVFoundation
 import Foundation
 import Speech
 
-/// Nowe API Apple z iOS 26 (SpeechAnalyzer): działa w całości na iPhonie,
+/// Nowe API Apple z iOS 26 (SpeechAnalyzer): działa w całości na urządzeniu,
 /// bez limitu długości nagrania. SpeechTranscriber obsługuje kilkanaście języków,
 /// DictationTranscriber – języki dyktowania dostępne offline.
 @available(iOS 26.0, *)
@@ -45,7 +45,7 @@ enum AnalyzerEngine {
                 attributeOptions: [.audioTimeRange]
             )
             try await installAssets(for: [transcriber], events: events)
-            events(.engine("Apple · model mowy na iPhonie"))
+            events(.engine("Apple · model mowy na \(DeviceNames.locative)"))
             events(.stage(nil))
             let analyzer = SpeechAnalyzer(modules: [transcriber])
             async let collected = collectSpeech(from: transcriber, duration: duration, events: events)
@@ -65,7 +65,7 @@ enum AnalyzerEngine {
                 attributeOptions: preset.attributeOptions
             )
             try await installAssets(for: [transcriber], events: events)
-            events(.engine("Apple · dyktowanie na iPhonie"))
+            events(.engine("Apple · dyktowanie na \(DeviceNames.locative)"))
             events(.stage(nil))
             let analyzer = SpeechAnalyzer(modules: [transcriber])
             async let collected = collectDictation(from: transcriber, duration: duration, events: events)

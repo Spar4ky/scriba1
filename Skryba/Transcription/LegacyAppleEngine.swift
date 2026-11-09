@@ -22,7 +22,7 @@ enum LegacyAppleEngine {
         if !onDevice && !recognizer.isAvailable {
             throw SkrybaError.appleServiceUnavailable
         }
-        events(.engine(onDevice ? "Apple · dyktowanie na iPhonie" : "Apple · serwery Apple"))
+        events(.engine(onDevice ? "Apple · dyktowanie na \(DeviceNames.locative)" : "Apple · serwery Apple"))
         events(.stage(nil))
 
         let reader = try PCMReader(url: job.audioURL)

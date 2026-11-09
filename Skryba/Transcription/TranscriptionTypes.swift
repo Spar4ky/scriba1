@@ -47,11 +47,11 @@ enum SkrybaError: LocalizedError {
         case .appleServiceUnavailable:
             return "Rozpoznawanie mowy Apple jest teraz niedostępne. Sprawdź połączenie z internetem i czy Dyktowanie jest włączone (Ustawienia → Ogólne → Klawiatura)."
         case .speechPermissionDenied:
-            return "Brak zgody na rozpoznawanie mowy. Włącz ją w Ustawieniach iPhone’a → Skryba."
+            return "Brak zgody na rozpoznawanie mowy. Włącz ją w Ustawieniach \(DeviceNames.genitive) → Skryba."
         case .modelDownloadFailed(let reason):
             return "Nie udało się pobrać modelu Whisper (jednorazowo potrzebny internet, najlepiej Wi-Fi). \(reason)"
         case .modelLoadFailed(let reason):
-            return "Nie udało się uruchomić modelu Whisper. Jeśli to starszy iPhone, wybierz w Ustawieniach model „Szybki”. \(reason)"
+            return "Nie udało się uruchomić modelu Whisper. Wybierz w Ustawieniach Skryby model „Szybki” i spróbuj ponownie. \(reason)"
         case .api(let message):
             return message
         case .timeout:

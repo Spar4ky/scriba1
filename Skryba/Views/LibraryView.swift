@@ -28,58 +28,56 @@ struct LibrarySection: Identifiable {
     }
 }
 
+/// Lista nagrań – lewa kolumna na iPadzie, ekran główny na iPhonie.
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var searchText = ""
     @State private var pendingDeletion: Recording?
 
     var body: some View {
-        @Bindable var app = app
-        NavigationStack(path: $app.path) {
-            content
-                .background(Color(.systemGroupedBackground))
-                .navigationTitle("Skryba")
-                .searchable(text: $searchText, prompt: "Szukaj w nagraniach i tekstach")
-                .toolbar {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button {
-                            app.isImporterPresented = true
-                        } label: {
-                            Image(systemName: "square.and.arrow.down")
-                        }
-                        .accessibilityLabel("Importuj plik audio")
+        content
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Skryba")
+            .searchable(text: $searchText, prompt: "Szukaj w nagraniach i tekstach")
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        app.isImporterPresented = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .keyboardShortcut("o", modifiers: .command)
+                    .accessibilityLabel("Importuj plik audio")
 
-                        Button {
-                            app.isSettingsPresented = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .accessibilityLabel("Ustawienia")
+                    Button {
+                        app.isSettingsPresented = true
+                    } label: {
+                        Image(systemName: "gearshape")
                     }
+                    .keyboardShortcut(",", modifiers: .command)
+                    .accessibilityLabel("Ustawienia")
                 }
-                .navigationDestination(for: UUID.self) { id in
-                    RecordingDetailView(recordingID: id)
+            }
+            .safeAreaInset(edge: .bottom) {
+                RecordButtonBar()
+            }
+            .confirmationDialog(
+                "Usunąć to nagranie?",
+                isPresented: Binding(
+                    get: { pendingDeletion != nil },
+                    set: { if !$0 { pendingDeletion = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: pendingDeletion
+            ) { recording in
+                Button("Usuń nagranie i transkrypcję", role: .destructive) {
+                    app.delete(recording.id)
                 }
-                .safeAreaInset(edge: .bottom) {
-                    RecordButtonBar()
-                }
-                .confirmationDialog(
-                    "Usunąć to nagranie?",
-                    isPresented: Binding(
-                        get: { pendingDeletion != nil },
-                        set: { if !$0 { pendingDeletion = nil } }
-                    ),
-                    titleVisibility: .visible,
-                    presenting: pendingDeletion
-                ) { recording in
-                    Button("Usuń nagranie i transkrypcję", role: .destructive) {
-                        app.delete(recording.id)
-                    }
-                    Button("Anuluj", role: .cancel) {}
-                } message: { recording in
-                    Text("„\(recording.title)” zniknie z tego iPhone’a.")
-                }
-        }
+                Button("Anuluj", role: .cancel) {}
+            } message: { recording in
+                Text("„\(recording.title)” zniknie z tego \(DeviceNames.genitive).")
+            }
     }
 
     private var filtered: [Recording] {
@@ -99,7 +97,7 @@ struct LibraryView: View {
             if sections.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             } else {
-                List {
+                List(selection: selection) {
                     ForEach(sections) { section in
                         Section {
                             ForEach(section.items) { recording in
@@ -119,13 +117,26 @@ struct LibraryView: View {
         }
     }
 
+    /// Zaznaczenie listy = otwarte nagranie. Na iPhonie wybór otwiera ekran nagrania,
+    /// a powrót czyści zaznaczenie; na iPadzie nagranie pokazuje się obok listy.
+    private var selection: Binding<UUID?> {
+        Binding(
+            get: { app.selectedID },
+            set: { app.selectedID = $0 }
+        )
+    }
+
     private func row(for recording: Recording) -> some View {
-        Button {
-            app.path.append(recording.id)
-        } label: {
-            RecordingCard(recording: recording, live: app.transcriber.live[recording.id])
+        let isSelected = horizontalSizeClass == .regular && app.selectedID == recording.id
+        return ZStack {
+            // Niewidoczny link (bez strzałki „>”) – cały wiersz otwiera nagranie.
+            NavigationLink(value: recording.id) {
+                EmptyView()
+            }
+            .opacity(0)
+            RecordingCard(recording: recording, live: app.transcriber.live[recording.id], isSelected: isSelected)
         }
-        .buttonStyle(PressableButtonStyle())
+        .hoverEffect(.highlight)
         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
@@ -160,6 +171,7 @@ struct LibraryView: View {
 struct RecordingCard: View {
     let recording: Recording
     let live: TranscriptionManager.LiveState?
+    var isSelected = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -183,6 +195,12 @@ struct RecordingCard: View {
             }
         }
         .card(padding: 16)
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(Brand.indigo, lineWidth: 2.5)
+            }
+        }
         .contentShape(Rectangle())
     }
 
@@ -263,6 +281,7 @@ struct RecordButtonBar: View {
         .buttonStyle(PressableButtonStyle())
         .frame(maxWidth: .infinity)
         .padding(.bottom, 6)
+        .keyboardShortcut("r", modifiers: .command)
         .accessibilityLabel("Rozpocznij nagrywanie")
     }
 }
@@ -296,13 +315,16 @@ struct EmptyLibraryView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     TipRow(icon: "mic.fill", text: "Dotknij „Nagraj” na dole ekranu.")
                     TipRow(icon: "square.and.arrow.up", text: "Albo w Dyktafonie: wybierz nagranie → Udostępnij → Skryba.")
+                    TipRow(icon: "folder.fill", text: "Możesz też zapisać nagranie w Plikach: \(DeviceNames.onMyDevice) → Skryba. Doda się samo.")
                     TipRow(icon: "doc.on.doc.fill", text: "Gotowy tekst skopiujesz przyciskiem „Kopiuj całość”.")
                 }
                 .card()
                 .padding(.horizontal, 4)
             }
+            .frame(maxWidth: 560)
             .padding(.horizontal, 20)
             .padding(.bottom, 40)
+            .frame(maxWidth: .infinity)
         }
     }
 }

@@ -33,7 +33,7 @@ enum TranscriptionService {
     }
 }
 
-/// Opis tego, co Apple potrafi na tym iPhonie dla wybranego języka (do Ustawień).
+/// Opis tego, co Apple potrafi na tym urządzeniu dla wybranego języka (do Ustawień).
 enum EngineDiagnostics {
     enum Quality: Sendable {
         case best
@@ -55,13 +55,13 @@ enum EngineDiagnostics {
                 switch kind {
                 case .speech:
                     return Report(
-                        title: "Model mowy Apple na iPhonie",
+                        title: "Model mowy Apple na \(DeviceNames.locative)",
                         detail: "Działa offline, bez limitu długości i dobrze radzi sobie z wykładami.",
                         quality: .best
                     )
                 case .dictation:
                     return Report(
-                        title: "Dyktowanie Apple na iPhonie",
+                        title: "Dyktowanie Apple na \(DeviceNames.locative)",
                         detail: "Działa offline. Najlepiej sprawdza się przy wyraźnej mowie.",
                         quality: .good
                     )
@@ -72,20 +72,20 @@ enum EngineDiagnostics {
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: language)) else {
             return Report(
                 title: "Apple nie obsługuje tego języka",
-                detail: "Wybierz silnik Whisper na iPhonie.",
+                detail: "Wybierz silnik Whisper.",
                 quality: .unavailable
             )
         }
         if recognizer.supportsOnDeviceRecognition {
             return Report(
-                title: "Dyktowanie Apple na iPhonie",
+                title: "Dyktowanie Apple na \(DeviceNames.locative)",
                 detail: "Działa offline. Nagranie jest przetwarzane we fragmentach ok. 1 minuty.",
                 quality: .good
             )
         }
         return Report(
             title: "Dyktowanie Apple przez internet",
-            detail: "Działa bez konfiguracji, ale wymaga internetu i radzi sobie przeciętnie z mową z dystansu. Do polskich wykładów zdecydowanie lepszy jest Whisper na iPhonie.",
+            detail: "Działa bez konfiguracji, ale wymaga internetu i radzi sobie przeciętnie z mową z dystansu. Do polskich wykładów zdecydowanie lepszy jest Whisper.",
             quality: .limited
         )
     }

@@ -23,6 +23,11 @@ final class TranscriptionManager {
     private let store: LibraryStore
     @ObservationIgnored private var queue: [UUID] = []
     @ObservationIgnored private var worker: Task<Void, Never>?
+    /// Znacznik bieżącego przebiegu – wynik porzuconego przebiegu jest pomijany.
+    @ObservationIgnored private var runToken: UUID?
+    @ObservationIgnored private var runStartedAt = Date()
+    /// Czy bieżący przebieg wciąż czeka na model (wtedy da się go porzucić od ręki).
+    @ObservationIgnored private var activeIsPreparing = false
     @ObservationIgnored private var activeKey: String?
     @ObservationIgnored private var interruptedByBackground = false
     @ObservationIgnored private var cancelledByUser = false
@@ -73,8 +78,18 @@ final class TranscriptionManager {
     func cancel(_ id: UUID) {
         queue.removeAll { $0 == id }
         if activeID == id {
-            cancelledByUser = true
-            worker?.cancel()
+            if activeIsPreparing {
+                // Przygotowania modelu nie da się przerwać – porzucamy je, żeby nie czekać.
+                abandonActive(id, note: "Transkrypcja anulowana podczas przygotowania modelu")
+                store.update(id) { recording in
+                    recording.status = .failed
+                    recording.errorMessage = "Transkrypcja anulowana. Dotknij „Spróbuj ponownie”, aby wznowić."
+                }
+                startNextIfPossible()
+            } else {
+                cancelledByUser = true
+                worker?.cancel()
+            }
         } else {
             store.update(id) { recording in
                 if recording.status == .pending {
@@ -87,6 +102,36 @@ final class TranscriptionManager {
 
     func isQueuedOrActive(_ id: UUID) -> Bool {
         activeID == id || queue.contains(id)
+    }
+
+    /// Porzuca bieżącą pracę nad nagraniem (nawet gdy model wciąż się przygotowuje)
+    /// i od razu zaczyna od nowa z aktualnymi ustawieniami – np. po zmianie modelu.
+    func restart(_ id: UUID) {
+        if activeID == id {
+            abandonActive(id, note: "Transkrypcja porzucona – start od nowa z nowymi ustawieniami")
+        }
+        queue.removeAll { $0 == id }
+        store.update(id) { recording in
+            recording.status = .pending
+            recording.errorMessage = nil
+        }
+        queue.insert(id, at: 0)
+        startNextIfPossible()
+    }
+
+    private func abandonActive(_ id: UUID, note: String) {
+        worker?.cancel()
+        worker = nil
+        runToken = nil
+        activeID = nil
+        activeKey = nil
+        activeIsPreparing = false
+        live[id] = nil
+        UIApplication.shared.isIdleTimerDisabled = false
+        if !isAppActive {
+            endBackgroundTask()
+        }
+        DiagnosticsLog.add(note)
     }
 
     // MARK: - Cykl życia aplikacji
@@ -131,6 +176,10 @@ final class TranscriptionManager {
     private func start(_ recording: Recording) {
         let job = makeJob(for: recording, settings: SettingsSnapshot.current())
         let id = recording.id
+        let token = UUID()
+        runToken = token
+        runStartedAt = Date()
+        activeIsPreparing = true
         activeID = id
         activeKey = job.checkpointKey
         interruptedByBackground = false
@@ -142,10 +191,12 @@ final class TranscriptionManager {
             recording.errorMessage = nil
         }
         UIApplication.shared.isIdleTimerDisabled = true
+        let resumeNote = job.resumeFrom > 0 ? " · wznowienie od \(TranscriptFormatter.clock(job.resumeFrom))" : ""
+        DiagnosticsLog.add("Start transkrypcji „\(recording.title)” (\(TranscriptFormatter.clock(recording.duration))) · \(job.engine.rawValue) \(job.model)\(resumeNote)")
 
         let sink: @Sendable (TranscriptionEvent) -> Void = { [weak self] event in
             Task { @MainActor in
-                self?.handle(event, for: id)
+                self?.handle(event, for: id, token: token)
             }
         }
         worker = Task { [weak self] in
@@ -157,14 +208,15 @@ final class TranscriptionManager {
             } onCancel: {
                 operation.cancel()
             }
-            self?.finish(id: id, result: result)
+            self?.finish(id: id, token: token, result: result)
         }
     }
 
-    private func handle(_ event: TranscriptionEvent, for id: UUID) {
-        guard activeID == id, var state = live[id] else { return }
+    private func handle(_ event: TranscriptionEvent, for id: UUID, token: UUID) {
+        guard runToken == token, activeID == id, var state = live[id] else { return }
         switch event {
         case .engine(let label):
+            activeIsPreparing = false
             state.engine = label
             store.update(id) { $0.engineLabel = label }
         case .stage(let text):
@@ -187,7 +239,12 @@ final class TranscriptionManager {
         live[id] = state
     }
 
-    private func finish(id: UUID, result: Result<[TranscriptSegment], Error>) {
+    private func finish(id: UUID, token: UUID, result: Result<[TranscriptSegment], Error>) {
+        // Wynik porzuconego przebiegu (np. po przełączeniu modelu) – ignorujemy.
+        guard runToken == token else { return }
+        runToken = nil
+        activeIsPreparing = false
+        let elapsed = Int(Date().timeIntervalSince(runStartedAt))
         activeID = nil
         activeKey = nil
         worker = nil
@@ -200,6 +257,7 @@ final class TranscriptionManager {
 
         switch result {
         case .success(let segments):
+            DiagnosticsLog.add("Transkrypcja gotowa w \(elapsed / 60) min \(elapsed % 60) s · fragmentów tekstu: \(segments.count)")
             store.update(id) { recording in
                 recording.segments = segments
                 recording.editedText = nil
@@ -215,17 +273,20 @@ final class TranscriptionManager {
             }
         case .failure(let error):
             if wasCancelled || error is CancellationError {
+                DiagnosticsLog.add("Transkrypcja anulowana")
                 store.update(id) { recording in
                     recording.status = .failed
                     recording.errorMessage = "Transkrypcja anulowana. Dotknij „Spróbuj ponownie”, aby wznowić."
                 }
             } else if wasInterrupted || !isAppActive {
+                DiagnosticsLog.add("Transkrypcja przerwana w tle – wznowi się po powrocie")
                 store.update(id) { $0.status = .pending }
                 if !queue.contains(id) {
                     queue.insert(id, at: 0)
                 }
             } else {
                 let message = SkrybaError.describe(error)
+                DiagnosticsLog.add("Błąd transkrypcji: \(message)")
                 store.update(id) { recording in
                     recording.status = .failed
                     recording.errorMessage = message

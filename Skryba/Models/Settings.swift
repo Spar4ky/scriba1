@@ -9,7 +9,7 @@ enum EngineChoice: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var title: String {
         switch self {
-        case .whisper: return "Whisper na iPhonie (zalecany)"
+        case .whisper: return "Whisper na \(DeviceNames.locative) (zalecany)"
         case .apple: return "Rozpoznawanie mowy Apple"
         }
     }
@@ -29,7 +29,7 @@ enum SettingsKey {
 enum SettingsDefault {
     static let language = Languages.defaultCode
     static let engine = EngineChoice.whisper
-    /// iPhone’y z min. 6 GB RAM dostają dokładny model, starsze – lżejszy.
+    /// Urządzenia z min. 6 GB RAM dostają dokładny model, starsze – lżejszy.
     static let whisperModel = ProcessInfo.processInfo.physicalMemory >= 5_500_000_000
         ? WhisperModels.accurate
         : WhisperModels.fast
@@ -85,7 +85,7 @@ struct ModelOption: Identifiable, Hashable {
     let detail: String
 }
 
-/// Modele Whisper uruchamiane na iPhonie (pobierane jednorazowo z Hugging Face).
+/// Modele Whisper uruchamiane na urządzeniu (pobierane jednorazowo z Hugging Face).
 enum WhisperModels {
     static let accurate = "openai_whisper-large-v3-v20240930_626MB"
     static let fast = "openai_whisper-small"

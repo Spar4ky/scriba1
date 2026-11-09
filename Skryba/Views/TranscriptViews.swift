@@ -36,9 +36,11 @@ struct TranscriptSection: View {
 
         case .transcribing:
             VStack(spacing: 16) {
-                TranscribingCard(live: live) {
-                    app.cancelTranscription(recording.id)
-                }
+                TranscribingCard(
+                    live: live,
+                    onSwitchToFast: { app.switchToFastModel(for: recording.id) },
+                    onCancel: { app.cancelTranscription(recording.id) }
+                )
                 let preview = live?.preview ?? recording.partialSegments
                 if !preview.isEmpty {
                     TranscriptBody(
@@ -195,7 +197,13 @@ struct ParagraphView: View {
 
 struct TranscribingCard: View {
     let live: TranscriptionManager.LiveState?
+    let onSwitchToFast: () -> Void
     let onCancel: () -> Void
+
+    /// Model jeszcze się pobiera albo przygotowuje (transkrypcja nie ruszyła).
+    private var isWaitingForModel: Bool {
+        ModelStatus.shared.isBusy && live?.engine == nil
+    }
 
     var body: some View {
         let progress = min(max(live?.progress ?? 0, 0), 1)
@@ -224,10 +232,14 @@ struct TranscribingCard: View {
                     .contentTransition(.numericText())
                     .animation(.default, value: percent)
             }
-            ProgressView(value: progress)
-                .tint(Brand.indigo)
+            if isWaitingForModel {
+                ModelPreparationView(status: ModelStatus.shared, onSwitchToFast: onSwitchToFast)
+            } else {
+                ProgressView(value: progress)
+                    .tint(Brand.indigo)
+            }
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "iphone")
+                Image(systemName: DeviceNames.isPad ? "ipad" : "iphone")
                 Text("Zostaw Skrybę otwartą do końca – ekran nie zgaśnie sam. Jeśli wyjdziesz, transkrypcja wznowi się po powrocie.")
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -237,6 +249,64 @@ struct TranscribingCard: View {
                 .font(.subheadline.weight(.semibold))
         }
         .card()
+    }
+}
+
+/// Pobieranie i przygotowanie modelu Whisper – z licznikiem czasu, żeby było widać, że coś się dzieje.
+struct ModelPreparationView: View {
+    let status: ModelStatus
+    /// Przycisk „Użyj modelu Szybki” (tylko przy transkrypcji, nie w Ustawieniach).
+    var allowsSwitch = true
+    var onSwitchToFast: () -> Void = {}
+
+    private var modelName: String {
+        WhisperModels.name(for: status.variant ?? "")
+    }
+
+    private var canSwitchToFast: Bool {
+        allowsSwitch && status.variant == WhisperModels.accurate
+    }
+
+    var body: some View {
+        switch status.phase {
+        case .downloading(let fraction):
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: fraction)
+                    .tint(Brand.violet)
+                Text(verbatim: "Pobieram model \(modelName): \(Int((fraction * 100).rounded()))%. To jednorazowe – najlepiej przez Wi-Fi.")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Brand.indigo)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .preparing(let firstTime):
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let elapsed = max(0, context.date.timeIntervalSince(status.phaseStartedAt))
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text(verbatim: "Przygotowuję model \(modelName) · \(TranscriptFormatter.clock(elapsed))")
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(Brand.indigo)
+                    }
+                    Text(firstTime
+                         ? "Pierwsze uruchomienie: \(DeviceNames.nominative) dopasowuje model do swojego procesora. Dzieje się to tylko raz i zwykle trwa 1–5 minut (model Dokładny czasem do kilkunastu). Kolejne transkrypcje ruszą od razu."
+                         : "Ładuję model do pamięci – to kilka sekund.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if canSwitchToFast && elapsed > 150 {
+                        Button(action: onSwitchToFast) {
+                            Label("Za długo? Użyj modelu Szybki", systemImage: "hare.fill")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Brand.indigo)
+                    }
+                }
+            }
+        case .idle, .ready, .failed:
+            EmptyView()
+        }
     }
 }
 

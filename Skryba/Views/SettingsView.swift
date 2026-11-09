@@ -26,6 +26,7 @@ struct SettingsView: View {
                 copySection
                 shareHelpSection
                 aboutSection
+                diagnosticsSection
             }
             .navigationTitle("Ustawienia")
             .navigationBarTitleDisplayMode(.inline)
@@ -89,7 +90,7 @@ struct SettingsView: View {
             } else {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Sprawdzam możliwości iPhone’a…")
+                    Text("Sprawdzam możliwości \(DeviceNames.genitive)…")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -97,7 +98,7 @@ struct SettingsView: View {
             Toggle(isOn: $farField) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Nagrania z dystansu")
-                    Text("Np. wykład z końca sali (dyktowanie na iPhonie).")
+                    Text("Np. wykład z końca sali (dyktowanie na \(DeviceNames.locative)).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -108,13 +109,19 @@ struct SettingsView: View {
             StatusRow(
                 icon: ready ? "checkmark.seal.fill" : "arrow.down.circle.fill",
                 tint: ready ? .green : Brand.indigo,
-                title: ready ? "Whisper działa na tym iPhonie" : "Model pobierze się przy pierwszej transkrypcji",
-                detail: "Najlepsza jakość dla polskiego, także przy dźwięku z końca sali. Działa bez internetu i nic nie wysyła poza telefon."
+                title: ready ? "Whisper działa na tym \(DeviceNames.locative)" : "Model trzeba raz pobrać i przygotować",
+                detail: "Najlepsza jakość dla polskiego, także przy dźwięku z końca sali. Działa bez internetu i nic nie wysyła poza urządzenie."
             )
         }
     }
 
+    /// Model pobrany i choć raz uruchomiony (kolejne transkrypcje ruszają od razu).
     private var isModelReady: Bool {
+        _ = app.modelRevision
+        return WhisperModelHost.isDownloaded(whisperModel) && WhisperModelHost.isPrepared(whisperModel)
+    }
+
+    private var isModelDownloaded: Bool {
         _ = app.modelRevision
         return WhisperModelHost.isDownloaded(whisperModel)
     }
@@ -126,31 +133,33 @@ struct SettingsView: View {
                     Text(verbatim: option.name).tag(option.id)
                 }
             }
-            if let progress = app.modelDownloadProgress {
-                VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: progress)
-                        .tint(Brand.indigo)
-                    Text(verbatim: "Pobieranie… \(Int((progress * 100).rounded()))% – nie zamykaj aplikacji")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            if ModelStatus.shared.isBusy {
+                ModelPreparationView(status: ModelStatus.shared, allowsSwitch: false)
+                    .padding(.vertical, 4)
             } else if isModelReady {
+                Label("Model gotowy do pracy", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
                 Button("Usuń pobrany model", role: .destructive) {
                     confirmModelDelete = true
                 }
             } else {
                 Button {
-                    app.downloadModel(whisperModel)
+                    app.prepareModel(whisperModel)
                 } label: {
-                    Label("Pobierz model teraz", systemImage: "arrow.down.circle")
+                    Label(isModelDownloaded ? "Przygotuj model teraz" : "Pobierz i przygotuj model", systemImage: "arrow.down.circle")
+                }
+                if isModelDownloaded {
+                    Button("Usuń pobrany model", role: .destructive) {
+                        confirmModelDelete = true
+                    }
                 }
             }
         } header: {
-            Text("Whisper na iPhonie")
+            Text("Whisper na \(DeviceNames.locative)")
         } footer: {
             Text(whisperFooter)
         }
-        .confirmationDialog("Usunąć model z iPhone’a?", isPresented: $confirmModelDelete, titleVisibility: .visible) {
+        .confirmationDialog("Usunąć model z \(DeviceNames.genitive)?", isPresented: $confirmModelDelete, titleVisibility: .visible) {
             Button("Usuń model", role: .destructive) {
                 app.deleteModel(whisperModel)
             }
@@ -161,7 +170,7 @@ struct SettingsView: View {
 
     private var whisperFooter: String {
         let detail = WhisperModels.all.first { $0.id == whisperModel }?.detail ?? ""
-        return detail + ". Model pobierasz raz (najlepiej przez Wi-Fi). Godzinny wykład to zwykle 5–15 minut transkrypcji – zostaw wtedy Skrybę otwartą."
+        return detail + ". Model pobierasz i przygotowujesz raz (najlepiej przez Wi-Fi, przy otwartej Skrybie) – pierwsze przygotowanie trwa kilka minut, potem transkrypcja rusza od razu. Godzinny wykład to zwykle 5–15 minut transkrypcji."
     }
 
     private var vocabularySection: some View {
@@ -188,12 +197,14 @@ struct SettingsView: View {
 
     private var shareHelpSection: some View {
         Section {
-            HowToRow(number: 1, text: "Otwórz Dyktafon i wybierz nagranie.")
-            HowToRow(number: 2, text: "Dotknij ••• (albo ikonę udostępniania) → „Udostępnij”.")
-            HowToRow(number: 3, text: "Wybierz „Skryba” – aplikacja otworzy się i od razu zrobi transkrypcję. Opcja „Transkrybuj” zapisuje nagranie w tle.")
-            HowToRow(number: 4, text: "Nie widzisz ikony? Przewiń rząd aplikacji do końca → „Więcej” i włącz Skrybę.")
+            HowToRow(number: 1, text: "W Dyktafonie wybierz nagranie → Udostępnij → „Skryba”.")
+            HowToRow(number: 2, text: "Jeśli Skryba poprosi o folder (tylko za pierwszym razem): wejdź do „\(DeviceNames.onMyDevice)” → „Skryba” i dotknij „Otwórz”.")
+            HowToRow(number: 3, text: "Otwórz Skrybę albo dotknij powiadomienia – nagranie doda się samo i od razu ruszy transkrypcja.")
+            HowToRow(number: 4, text: "Zawsze działa też: Udostępnij → „Zachowaj w Plikach” → „\(DeviceNames.onMyDevice)” → „Skryba” → Zapisz.")
         } header: {
             Text("Udostępnianie z Dyktafonu")
+        } footer: {
+            Text("Nie widzisz Skryby w arkuszu udostępniania? Przewiń rząd aplikacji do końca → „Więcej” i włącz ją.")
         }
     }
 
@@ -205,7 +216,23 @@ struct SettingsView: View {
         } header: {
             Text("O aplikacji")
         } footer: {
-            Text("Nagrania i transkrypcje są przechowywane tylko na tym iPhonie.")
+            Text("Nagrania i transkrypcje są przechowywane tylko na tym \(DeviceNames.locative).")
+        }
+    }
+
+    private var diagnosticsSection: some View {
+        Section {
+            LabeledContent("Urządzenie", value: DeviceInfo.summary)
+            LabeledContent("Wspólny kontener", value: AppGroup.identifier == nil ? "brak – działa folder Skryba" : "działa")
+            NavigationLink {
+                DiagnosticsLogView()
+            } label: {
+                Label("Dziennik zdarzeń", systemImage: "list.bullet.rectangle")
+            }
+        } header: {
+            Text("Diagnostyka")
+        } footer: {
+            Text("Gdy coś nie działa, otwórz dziennik i zrób zrzut ekranu – widać w nim, co i kiedy się działo.")
         }
     }
 
@@ -232,6 +259,40 @@ struct SettingsView: View {
         case .good: return .green
         case .limited: return .orange
         case .unavailable: return .red
+        }
+    }
+}
+
+/// Dziennik zdarzeń (pobieranie i przygotowanie modelu, transkrypcje, importy, błędy).
+struct DiagnosticsLogView: View {
+    @State private var text = ""
+    @State private var copied = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(verbatim: "Skryba \(DeviceInfo.appVersion)\n\(DeviceInfo.summary)\nApp Group: \(AppGroup.statusDescription)")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: text.isEmpty ? "Dziennik jest pusty." : text)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding()
+        }
+        .navigationTitle("Dziennik zdarzeń")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(copied ? "Skopiowano" : "Kopiuj") {
+                    UIPasteboard.general.string = "Skryba \(DeviceInfo.appVersion) · \(DeviceInfo.summary)\n\n" + text
+                    copied = true
+                }
+            }
+        }
+        .onAppear {
+            text = DiagnosticsLog.shared.text
         }
     }
 }

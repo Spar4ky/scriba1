@@ -1,16 +1,22 @@
 import Foundation
 
-/// Wspólny kontener (App Group) aplikacji Skryba i rozszerzenia „Transkrybuj”.
+/// Wspólny kontener (App Group) aplikacji Skryba i rozszerzenia udostępniania.
 /// Rozszerzenie odkłada tu nagrania z Dyktafonu, a aplikacja je stąd zabiera.
+///
+/// Programy instalujące aplikację (Sideloadly, AltStore, SideStore) potrafią zmienić nazwę
+/// grupy – np. dopisać identyfikator zespołu. Dlatego sprawdzamy kilka źródeł
+/// i wybieramy tę grupę, do której system faktycznie dał dostęp.
 enum AppGroup {
     static let infoPlistKey = "SkrybaAppGroupID"
 
-    static var identifier: String? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: infoPlistKey) as? String else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("$(") else { return nil }
-        return trimmed
-    }
+    /// Grupa działająca w tej instalacji (nil = brak wspólnego kontenera).
+    static let identifier: String? = {
+        let fileManager = FileManager.default
+        for candidate in candidates() where fileManager.containerURL(forSecurityApplicationGroupIdentifier: candidate) != nil {
+            return candidate
+        }
+        return nil
+    }()
 
     static var containerURL: URL? {
         guard let identifier else { return nil }
@@ -22,6 +28,74 @@ enum AppGroup {
         let url = container.appendingPathComponent("Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    /// Grupy warte sprawdzenia – od najbardziej prawdopodobnej.
+    static func candidates() -> [String] {
+        var result: [String] = []
+        func add(_ value: String?) {
+            guard let value else { return }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("group."), !trimmed.contains("$("), !result.contains(trimmed) else { return }
+            result.append(trimmed)
+        }
+
+        let configured = (Bundle.main.object(forInfoDictionaryKey: infoPlistKey) as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        add(configured)
+
+        // AltStore i SideStore zapisują faktyczne nazwy grup w Info.plist.
+        let altStoreGroups = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
+        for group in altStoreGroups {
+            add(group)
+        }
+
+        // Pozostałe programy: grupy wpisane w profil, którym podpisano aplikację.
+        let profileGroups = ProvisioningProfile.applicationGroups()
+        if !configured.isEmpty {
+            for group in profileGroups where group.hasPrefix(configured) {
+                add(group)
+            }
+        }
+        for group in profileGroups {
+            add(group)
+        }
+        return result
+    }
+
+    /// Krótki opis do ekranu diagnostyki.
+    static var statusDescription: String {
+        if let identifier {
+            return "działa (\(identifier))"
+        }
+        let checked = candidates()
+        if checked.isEmpty {
+            return "brak – nagrania idą przez folder Skryba"
+        }
+        return "brak dostępu do: " + checked.joined(separator: ", ")
+    }
+}
+
+/// Uprawnienia zapisane w profilu, którym podpisano aplikację (embedded.mobileprovision).
+enum ProvisioningProfile {
+    static func applicationGroups() -> [String] {
+        entitlements()?["com.apple.security.application-groups"] as? [String] ?? []
+    }
+
+    static func entitlements() -> [String: Any]? {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex) else {
+            return nil
+        }
+        // Profil to podpisana koperta CMS – sam plist leży w środku jako zwykły tekst.
+        let plistData = data.subdata(in: start.lowerBound..<end.upperBound)
+        guard let object = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil),
+              let plist = object as? [String: Any] else {
+            return nil
+        }
+        return plist["Entitlements"] as? [String: Any]
     }
 }
 
@@ -45,7 +119,7 @@ enum InboxError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noSharedContainer:
-            return "Brak wspólnego kontenera aplikacji (App Group). Udostępnij nagranie opcją „Skryba” albo sprawdź podpisywanie obu targetów w Xcode."
+            return "Brak wspólnego kontenera aplikacji (App Group)."
         }
     }
 }
