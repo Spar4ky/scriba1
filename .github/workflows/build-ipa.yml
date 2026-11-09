@@ -1,0 +1,46 @@
+# Buduje niepodpisany plik Skryba.ipa na Macu w chmurze GitHuba.
+# Przydaje się, gdy nie masz własnego Maca: pobrany .ipa zainstalujesz
+# np. programem Sideloadly (Windows/macOS) z darmowym Apple ID.
+name: Zbuduj IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wybierz najnowszy Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Uzywam: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Zbuduj aplikacje (bez podpisu)
+        run: |
+          xcodebuild \
+            -project Skryba.xcodeproj \
+            -scheme Skryba \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Spakuj do .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Skryba.app Payload/
+          zip -qry Skryba.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Skryba-ipa
+          path: Skryba.ipa
