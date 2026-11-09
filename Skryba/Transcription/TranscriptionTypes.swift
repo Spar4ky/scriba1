@@ -28,6 +28,8 @@ enum TranscriptionEvent: Sendable {
     case partial([TranscriptSegment])
     /// Punkt kontrolny: wyniki do danej sekundy (do wznowienia po przerwie).
     case checkpoint([TranscriptSegment], Double)
+    /// Skryba jest w tle, a system nie pozwala tam pracować – czekamy na powrót (true) albo już ruszamy (false).
+    case waitingForForeground(Bool)
 }
 
 enum SkrybaError: LocalizedError {

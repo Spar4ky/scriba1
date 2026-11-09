@@ -1,11 +1,13 @@
+import CoreML
 import Foundation
 import Observation
 import WhisperKit
 
 /// Whisper uruchamiany w całości na urządzeniu (WhisperKit, Core ML / Neural Engine).
 /// Działa bez internetu – sieć jest potrzebna tylko raz, do pobrania modelu.
-/// Nagranie jest dzielone na ok. 2-minutowe fragmenty cięte w ciszy, dzięki czemu
+/// Nagranie jest dzielone na ok. minutowe fragmenty cięte w ciszy, dzięki czemu
 /// zużycie pamięci jest stałe, a przerwana transkrypcja wznawia się od ostatniego fragmentu.
+/// Działa też w tle: bez karty graficznej, oszczędniej i z przerwami dla procesora.
 enum WhisperLocalEngine {
     static func transcribe(
         job: TranscriptionJob,
@@ -29,33 +31,87 @@ enum WhisperLocalEngine {
         options.chunkingStrategy = .vad
 
         let reader = try PCMReader(url: job.audioURL)
-        let chunker = SilenceChunker(reader: reader, startAt: job.resumeFrom, minDuration: 90, maxDuration: 120)
+        // Fragmenty ok. 1 min: częste punkty kontrolne, a przy wyjściu z aplikacji
+        // dokończenie bieżącego fragmentu trwa krótko (iOS pilnuje zużycia procesora w tle).
+        let chunker = SilenceChunker(reader: reader, startAt: job.resumeFrom, minDuration: 55, maxDuration: 75)
         let total = max(reader.duration, 1)
-        let totalChunks = max(1, Int((total / 110).rounded(.up)))
         var segments = job.partialSegments
         events(.progress(min(1, job.resumeFrom / total)))
         if !segments.isEmpty { events(.partial(segments)) }
 
         let started = Date()
         var processed = 0.0
-        while let chunk = try chunker.next() {
+        var chunkCount = 0
+        while true {
             try Task.checkCancellation()
-            let index = min(totalChunks, Int((chunk.start / 110).rounded(.down)) + 1)
-            events(.stage("Transkrybuję fragment \(index) z ok. \(totalChunks)…"))
+            // W tle: przy nagrywaniu ustępujemy mu miejsca, a gdy system nie pozwala – czekamy na powrót.
+            try await BackgroundGate.checkpoint(events: events)
+            let limit = AppActivity.shared.isInBackground ? BackgroundGate.backgroundChunkLimit : nil
+            guard let chunk = try chunker.next(limit: limit) else { break }
+            chunkCount += 1
+            events(.stage("Transkrybuję \(TranscriptFormatter.clock(chunk.start)) z \(TranscriptFormatter.clock(total))…"))
             if chunk.duration >= 0.5 && AudioMath.peakLevel(of: chunk.samples) > -50 {
-                let results = try await kit.transcribe(audioArray: chunk.samples, decodeOptions: options)
+                let results = try await transcribeChunk(chunk, kit: kit, options: options, events: events)
                 segments.append(contentsOf: convert(results, offset: chunk.start, chunkEnd: chunk.end))
             }
             processed += chunk.duration
-            if index == 1 || index % 10 == 0 {
+            if chunkCount == 1 || chunkCount % 15 == 0 {
                 let speed = processed / max(Date().timeIntervalSince(started), 0.1)
-                DiagnosticsLog.add("Fragment \(index)/\(totalChunks) gotowy · szybkość \(String(format: "%.1f", speed))× czasu nagrania")
+                let place = AppActivity.shared.isInBackground ? " (w tle)" : ""
+                DiagnosticsLog.add("Gotowe \(TranscriptFormatter.clock(chunk.end)) z \(TranscriptFormatter.clock(total))\(place) · szybkość \(String(format: "%.1f", speed))× czasu nagrania")
             }
             events(.checkpoint(segments, chunk.end))
             events(.progress(min(1, chunk.end / total)))
         }
         events(.stage(nil))
         return segments
+    }
+
+    /// Jeden fragment. W tle pracujemy oszczędniej (jeden wątek, przerwy dla procesora),
+    /// a gdy system odmówi pracy w tle – czekamy na powrót do Skryby i powtarzamy fragment.
+    private static func transcribeChunk(
+        _ chunk: PCMChunk,
+        kit: WhisperKit,
+        options: DecodingOptions,
+        events: @escaping @Sendable (TranscriptionEvent) -> Void
+    ) async throws -> [TranscriptionResult] {
+        var attempts = 0
+        while true {
+            let inBackground = AppActivity.shared.isInBackground
+            var chunkOptions = options
+            if inBackground {
+                chunkOptions.concurrentWorkerCount = 1
+            }
+            BackgroundWorkGuard.chunkStarted()
+            let cpuStart = ProcessCPU.seconds()
+            let wallStart = Date()
+            do {
+                let results = try await kit.transcribe(audioArray: chunk.samples, decodeOptions: chunkOptions)
+                BackgroundWorkGuard.chunkFinished(succeeded: true, ranInBackground: inBackground)
+                if AppActivity.shared.isInBackground {
+                    await BackgroundGate.throttle(
+                        cpuUsed: ProcessCPU.seconds() - cpuStart,
+                        wall: Date().timeIntervalSince(wallStart)
+                    )
+                }
+                return results
+            } catch {
+                BackgroundWorkGuard.chunkFinished(succeeded: false, ranInBackground: inBackground)
+                if error is CancellationError || Task.isCancelled {
+                    throw error
+                }
+                let backgroundRelated = inBackground || AppActivity.shared.isInBackground
+                guard backgroundRelated, attempts < 3 else {
+                    throw error
+                }
+                attempts += 1
+                BackgroundWorkGuard.recordFailure("Fragment nie przeszedł w tle (\(error.localizedDescription))", definite: true)
+                events(.waitingForForeground(true))
+                await BackgroundGate.waitForForeground()
+                events(.waitingForForeground(false))
+                try Task.checkCancellation()
+            }
+        }
     }
 
     private static func convert(_ results: [TranscriptionResult], offset: Double, chunkEnd: Double) -> [TranscriptSegment] {
@@ -299,6 +355,7 @@ actor WhisperModelHost {
         do {
             var config = WhisperKitConfig(modelFolder: folder.path)
             config.tokenizerFolder = WhisperStorage.baseURL
+            config.computeOptions = WhisperModelHost.computeOptions
             config.load = false
             let kit = try await WhisperKit(config)
             try await kit.loadModels()
@@ -317,6 +374,18 @@ actor WhisperModelHost {
             }
             throw failure
         }
+    }
+
+    /// Bez karty graficznej: iOS nie pozwala używać GPU w tle (praca się przerywa,
+    /// a nowsze systemy wręcz zamykają aplikację). Spektrogram liczy procesor,
+    /// a enkoder i dekoder – Neural Engine (z procesorem jako zapasem).
+    static var computeOptions: ModelComputeOptions {
+        ModelComputeOptions(
+            melCompute: .cpuOnly,
+            audioEncoderCompute: .cpuAndNeuralEngine,
+            textDecoderCompute: .cpuAndNeuralEngine,
+            prefillCompute: .cpuOnly
+        )
     }
 
     // MARK: - Pliki modelu

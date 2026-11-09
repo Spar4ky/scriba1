@@ -97,13 +97,15 @@ final class Recorder {
         let newRecorder = try AVAudioRecorder(url: url, settings: settings)
         newRecorder.isMeteringEnabled = true
         guard newRecorder.prepareToRecord(), newRecorder.record() else {
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            releaseSession()
             throw RecorderError.couldNotStart
         }
         recorder = newRecorder
         elapsed = 0
         levels = Array(repeating: 0, count: Recorder.barCount)
         state = .recording
+        // Transkrypcja w tle ustępuje nagrywaniu (mniej pamięci = iOS nie zamknie Skryby).
+        AppActivity.shared.isRecording = true
         startTimer()
     }
 
@@ -158,7 +160,18 @@ final class Recorder {
         recorder = nil
         state = .idle
         interruptedWhileRecording = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        AppActivity.shared.isRecording = false
+        releaseSession()
+    }
+
+    /// Kończy sesję nagrywania. Jeśli trwa transkrypcja, sesja zostaje aktywna
+    /// (cicha sesja w tle), żeby iOS nie uśpił Skryby.
+    private func releaseSession() {
+        if BackgroundKeeper.shared.isNeeded {
+            BackgroundKeeper.shared.ensurePlaying()
+        } else {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func startTimer() {

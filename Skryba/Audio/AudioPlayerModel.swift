@@ -35,6 +35,7 @@ final class AudioPlayerModel {
     }
 
     func unload() {
+        let wasPlaying = isPlaying
         player?.stop()
         player = nil
         loadedURL = nil
@@ -43,6 +44,9 @@ final class AudioPlayerModel {
         currentTime = 0
         duration = 0
         stopTimer()
+        if wasPlaying {
+            playbackStopped()
+        }
     }
 
     func togglePlayback() {
@@ -56,11 +60,15 @@ final class AudioPlayerModel {
     func play() {
         guard let player else { return }
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio)
+        // W trakcie nagrywania nie zmieniamy ustawień sesji – one też pozwalają odtwarzać.
+        if !AppActivity.shared.isRecording {
+            try? session.setCategory(.playback, mode: .spokenAudio)
+        }
         try? session.setActive(true)
         player.rate = rate
         if player.play() {
             isPlaying = true
+            BackgroundKeeper.shared.userPlaybackActive = true
             startTimer()
         }
     }
@@ -76,6 +84,7 @@ final class AudioPlayerModel {
         isPlaying = false
         currentTime = player.currentTime
         stopTimer()
+        playbackStopped()
     }
 
     func seek(to time: Double) {
@@ -121,6 +130,13 @@ final class AudioPlayerModel {
             isPlaying = false
             currentTime = player.currentTime
             stopTimer()
+            playbackStopped()
         }
+    }
+
+    /// Po odsłuchu przywracamy cichą sesję w tle (jeśli trwa transkrypcja).
+    private func playbackStopped() {
+        BackgroundKeeper.shared.userPlaybackActive = false
+        BackgroundKeeper.shared.ensurePlaying()
     }
 }

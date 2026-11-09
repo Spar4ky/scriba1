@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.vocabulary) private var vocabulary = SettingsDefault.vocabulary
 
     @State private var confirmModelDelete = false
+    @State private var backgroundRevision = 0
     @State private var appleReport: EngineDiagnostics.Report?
     @State private var storageText = "…"
 
@@ -220,10 +221,22 @@ struct SettingsView: View {
         }
     }
 
+    private var backgroundStatus: String {
+        _ = backgroundRevision
+        return BackgroundWorkGuard.statusDescription
+    }
+
     private var diagnosticsSection: some View {
         Section {
             LabeledContent("Urządzenie", value: DeviceInfo.summary)
             LabeledContent("Wspólny kontener", value: AppGroup.identifier == nil ? "brak – działa folder Skryba" : "działa")
+            LabeledContent("Transkrypcja w tle", value: backgroundStatus)
+            if !BackgroundWorkGuard.isAllowed {
+                Button("Sprawdź pracę w tle jeszcze raz") {
+                    BackgroundWorkGuard.reset()
+                    backgroundRevision += 1
+                }
+            }
             NavigationLink {
                 DiagnosticsLogView()
             } label: {

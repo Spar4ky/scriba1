@@ -61,6 +61,7 @@ final class AppModel {
             self?.persistInterruptedRecording(duration: duration)
         }
         WhisperStorage.migrateIfNeeded(variants: WhisperModels.all.map(\.id))
+        BackgroundWorkGuard.checkPreviousRun()
         DropFolder.prepare()
         DiagnosticsLog.add("Start Skryby \(DeviceInfo.appVersion) · \(DeviceInfo.summary) · App Group: \(AppGroup.statusDescription)")
         recoverInterruptedRecordings()
@@ -209,10 +210,12 @@ final class AppModel {
         switch phase {
         case .active:
             isActive = true
+            AppActivity.shared.isInBackground = false
             transcriber.appDidBecomeActive()
             importIncoming()
         case .background:
             isActive = false
+            AppActivity.shared.isInBackground = true
             transcriber.appDidEnterBackground()
         default:
             break

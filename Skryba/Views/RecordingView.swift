@@ -44,7 +44,7 @@ struct RecordingView: View {
                 titleField
                 controls
                     .padding(.top, 30)
-                Text("Możesz zablokować ekran albo przejść do innej aplikacji – nagrywanie trwa w tle, nawet kilka godzin. Po zakończeniu transkrypcja ruszy sama.\(DeviceNames.isPad ? " Skróty: ⌘P pauza, ⌘⏎ zakończ." : "")")
+                Text("Możesz zablokować ekran albo przejść do innej aplikacji – nagrywanie trwa w tle, nawet kilka godzin. Nie zamykaj tylko Skryby w przełączniku aplikacji (przesunięcie w górę) – to zatrzymuje nagrywanie.\(DeviceNames.isPad ? " Skróty: ⌘P pauza, ⌘⏎ zakończ." : "")")
                     .font(.footnote)
                     .foregroundStyle(.white.opacity(0.55))
                     .multilineTextAlignment(.center)

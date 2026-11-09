@@ -205,6 +205,16 @@ struct TranscribingCard: View {
         ModelStatus.shared.isBusy && live?.engine == nil
     }
 
+    private var backgroundNote: String {
+        if live?.waitingForForeground == true {
+            return "Czekała, gdy Skryba była w tle – rusza dalej od miejsca, w którym stanęła."
+        }
+        if BackgroundWorkGuard.isAllowed {
+            return "Możesz przejść do innej aplikacji albo zablokować ekran – transkrypcja trwa dalej (w tle wolniej). Nie zamykaj tylko Skryby w przełączniku aplikacji."
+        }
+        return "Ten \(DeviceNames.nominative) nie pozwala Skrybie przepisywać w tle – gdy wyjdziesz, transkrypcja zaczeka i ruszy od razu po powrocie, bez zaczynania od nowa."
+    }
+
     var body: some View {
         let progress = min(max(live?.progress ?? 0, 0), 1)
         let percent = Int((progress * 100).rounded())
@@ -239,8 +249,8 @@ struct TranscribingCard: View {
                     .tint(Brand.indigo)
             }
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: DeviceNames.isPad ? "ipad" : "iphone")
-                Text("Zostaw Skrybę otwartą do końca – ekran nie zgaśnie sam. Jeśli wyjdziesz, transkrypcja wznowi się po powrocie.")
+                Image(systemName: live?.waitingForForeground == true ? "pause.circle" : "arrow.up.forward.app")
+                Text(backgroundNote)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .font(.footnote)

@@ -129,8 +129,16 @@ final class SilenceChunker {
         reader.seek(to: max(0, startAt))
     }
 
-    func next() throws -> PCMChunk? {
-        while !exhausted && pending.count < maxSamples {
+    /// Następny fragment. `limit` (w sekundach) skraca fragment – np. w tle,
+    /// żeby rozłożyć obciążenie procesora na mniejsze porcje.
+    func next(limit: Double? = nil) throws -> PCMChunk? {
+        var upper = maxSamples
+        var lower = minSamples
+        if let limit {
+            upper = min(maxSamples, max(Int(limit * PCMReader.sampleRate), Int(PCMReader.sampleRate)))
+            lower = min(minSamples, upper * 3 / 4)
+        }
+        while !exhausted && pending.count < upper {
             if let block = try reader.nextBlock() {
                 pending.append(contentsOf: block)
             } else {
@@ -139,10 +147,10 @@ final class SilenceChunker {
         }
         guard !pending.isEmpty else { return nil }
         let cut: Int
-        if exhausted && pending.count <= maxSamples {
+        if exhausted && pending.count <= upper {
             cut = pending.count
         } else {
-            cut = AudioMath.quietestPoint(in: pending, from: minSamples, to: min(maxSamples, pending.count))
+            cut = AudioMath.quietestPoint(in: pending, from: lower, to: min(upper, pending.count))
         }
         let samples = Array(pending[0..<cut])
         pending.removeFirst(cut)

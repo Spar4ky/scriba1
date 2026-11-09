@@ -3,8 +3,9 @@
 Nagrywasz wykład → po zatrzymaniu Skryba od razu robi transkrypcję → jednym przyciskiem
 kopiujesz cały tekst. Możesz też udostępnić nagranie z Dyktafonu prosto do Skryby.
 
-Wersja 1.1: pełna wersja na iPada, naprawione udostępnianie z Dyktafonu, widoczny postęp
-przygotowania modelu i dziennik diagnostyczny.
+Wersja 1.2: transkrypcja trwa dalej, gdy przejdziesz do innej aplikacji albo zablokujesz
+ekran; nagrywanie w tle ma pierwszeństwo. (1.1: pełna wersja na iPada, udostępnianie
+z Dyktafonu, postęp przygotowania modelu, dziennik diagnostyczny.)
 
 ## Co potrafi
 
@@ -57,6 +58,19 @@ Whisper działa w całości na urządzeniu. Za pierwszym razem:
 Kolejne transkrypcje ruszają od razu. Model możesz też pobrać i przygotować wcześniej:
 Ustawienia → Whisper → **Pobierz i przygotuj model**. Godzinny wykład to zwykle 5–15 minut
 transkrypcji – zostaw wtedy Skrybę otwartą (ekran nie gaśnie sam).
+
+## Praca w tle
+
+- **Nagrywanie** trwa przy zablokowanym ekranie i w innych aplikacjach (nawet kilka godzin).
+  Nie zamykaj tylko Skryby w przełączniku aplikacji (przesunięcie w górę) – to ją wyłącza.
+- **Transkrypcja** też trwa w tle: Skryba odtwarza wtedy ciszę (nie słychać jej, muzyka i filmy
+  w innych aplikacjach grają normalnie), nie używa karty graficznej i robi przerwy, żeby iOS
+  nie zamknął jej za zużycie procesora – w tle jest więc wolniejsza niż na ekranie.
+- **Gdy nagrywasz i wyjdziesz ze Skryby**, transkrypcja innego nagrania czeka (zwalnia pamięć),
+  żeby system na pewno nie przerwał nagrywania. Ruszy sama po powrocie do aplikacji.
+- **iOS/iPadOS 27** może nie pozwalać na obliczenia AI w tle. Skryba sprawdza to sama: jeśli
+  system odmówi, transkrypcja w tle czeka i po powrocie rusza dalej od miejsca, w którym stanęła
+  (bez zaczynania od nowa). Stan widać w Ustawienia → Diagnostyka → „Transkrypcja w tle”.
 
 ## Udostępnianie z Dyktafonu
 

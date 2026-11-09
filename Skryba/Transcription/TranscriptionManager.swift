@@ -12,6 +12,8 @@ final class TranscriptionManager {
         var stage: String?
         var engine: String?
         var preview: [TranscriptSegment] = []
+        /// Skryba jest w tle, a system nie pozwala tam pracować – transkrypcja czeka na powrót.
+        var waitingForForeground = false
     }
 
     private(set) var live: [UUID: LiveState] = [:]
@@ -32,6 +34,10 @@ final class TranscriptionManager {
     @ObservationIgnored private var interruptedByBackground = false
     @ObservationIgnored private var cancelledByUser = false
     @ObservationIgnored private var isAppActive = true
+    /// Po błędzie w tle nie zaczynamy kolejnych prób, dopóki aplikacja nie wróci na ekran.
+    @ObservationIgnored private var holdUntilForeground = false
+    /// Powiadomienie „transkrypcja czeka” wysyłamy raz na przebieg.
+    @ObservationIgnored private var notifiedWaiting = false
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     init(store: LibraryStore) {
@@ -57,6 +63,7 @@ final class TranscriptionManager {
         }
         Notifier.requestAuthorizationIfNeeded()
         startNextIfPossible()
+        updateBackgroundKeeper()
     }
 
     /// Wznawia wszystko, co czeka (np. po ponownym uruchomieniu aplikacji).
@@ -73,6 +80,7 @@ final class TranscriptionManager {
             }
         }
         startNextIfPossible()
+        updateBackgroundKeeper()
     }
 
     func cancel(_ id: UUID) {
@@ -98,6 +106,7 @@ final class TranscriptionManager {
                 }
             }
         }
+        updateBackgroundKeeper()
     }
 
     func isQueuedOrActive(_ id: UUID) -> Bool {
@@ -117,6 +126,16 @@ final class TranscriptionManager {
         }
         queue.insert(id, at: 0)
         startNextIfPossible()
+        updateBackgroundKeeper()
+    }
+
+    /// Cicha sesja audio trzyma Skrybę przy życiu w tle, dopóki jest co przepisywać
+    /// (wyłączona, gdy transkrypcja i tak czeka na powrót – oszczędza baterię).
+    private func updateBackgroundKeeper() {
+        // Liczy się tylko praca, która może teraz posuwać się naprzód.
+        let hasWork = activeID != nil || (!queue.isEmpty && canStartWork)
+        let waiting = activeID.flatMap { live[$0]?.waitingForForeground } ?? false
+        BackgroundKeeper.shared.setNeeded(hasWork && !waiting)
     }
 
     private func abandonActive(_ id: UUID, note: String) {
@@ -138,12 +157,24 @@ final class TranscriptionManager {
 
     func appDidBecomeActive() {
         isAppActive = true
+        holdUntilForeground = false
+        BackgroundWorkGuard.appBecameActive()
         endBackgroundTask()
         resumePending()
+        BackgroundKeeper.shared.ensurePlaying()
     }
 
     func appDidEnterBackground() {
         isAppActive = false
+        BackgroundWorkGuard.appEnteredBackground()
+        guard activeID != nil || !queue.isEmpty else { return }
+        if AppActivity.shared.isRecording {
+            DiagnosticsLog.add("Skryba w tle podczas nagrywania – transkrypcja poczeka, nagrywanie ma pierwszeństwo")
+        } else if BackgroundWorkGuard.isAllowed {
+            DiagnosticsLog.add("Skryba w tle – transkrypcja trwa dalej (oszczędniej)")
+        } else {
+            DiagnosticsLog.add("Skryba w tle – transkrypcja poczeka na powrót (system nie pozwala pracować w tle)")
+        }
         guard activeID != nil else { return }
         interruptedByBackground = true
         if backgroundTask == .invalid {
@@ -163,8 +194,15 @@ final class TranscriptionManager {
 
     // MARK: - Praca
 
+    /// Czy można teraz zacząć kolejną transkrypcję? Na ekranie – zawsze. W tle – tylko gdy
+    /// system na to pozwala, Skryba nie nagrywa i nie było błędu w tle.
+    private var canStartWork: Bool {
+        if isAppActive { return true }
+        return BackgroundWorkGuard.isAllowed && !AppActivity.shared.isRecording && !holdUntilForeground
+    }
+
     private func startNextIfPossible() {
-        guard activeID == nil, isAppActive else { return }
+        guard activeID == nil, canStartWork else { return }
         while !queue.isEmpty {
             let id = queue.removeFirst()
             guard let recording = store.recording(id: id), recording.status == .pending else { continue }
@@ -180,6 +218,7 @@ final class TranscriptionManager {
         runToken = token
         runStartedAt = Date()
         activeIsPreparing = true
+        notifiedWaiting = false
         activeID = id
         activeKey = job.checkpointKey
         interruptedByBackground = false
@@ -235,8 +274,21 @@ final class TranscriptionManager {
                     recording.checkpointKey = key
                 }
             }
+        case .waitingForForeground(let waiting):
+            state.waitingForForeground = waiting
+            if waiting && !notifiedWaiting {
+                notifiedWaiting = true
+                let title = store.recording(id: id)?.title ?? "Nagranie"
+                Notifier.post(
+                    title: "Transkrypcja czeka na Ciebie",
+                    body: "„\(title)” – otwórz Skrybę, a transkrypcja ruszy dalej od miejsca, w którym stanęła."
+                )
+            }
         }
         live[id] = state
+        if case .waitingForForeground = event {
+            updateBackgroundKeeper()
+        }
     }
 
     private func finish(id: UUID, token: UUID, result: Result<[TranscriptSegment], Error>) {
@@ -272,17 +324,30 @@ final class TranscriptionManager {
                 onFinished?(recording)
             }
         case .failure(let error):
-            if wasCancelled || error is CancellationError {
+            if error is TranscriptionPause {
+                // Nagrywanie w tle ma pierwszeństwo: zwalniamy model z pamięci i czekamy.
+                DiagnosticsLog.add("Transkrypcja wstrzymana na czas nagrywania w tle – ruszy po powrocie do Skryby")
+                store.update(id) { $0.status = .pending }
+                if !queue.contains(id) {
+                    queue.insert(id, at: 0)
+                }
+                Task {
+                    await WhisperModelHost.shared.unload()
+                }
+            } else if wasCancelled || error is CancellationError {
                 DiagnosticsLog.add("Transkrypcja anulowana")
                 store.update(id) { recording in
                     recording.status = .failed
                     recording.errorMessage = "Transkrypcja anulowana. Dotknij „Spróbuj ponownie”, aby wznowić."
                 }
             } else if wasInterrupted || !isAppActive {
-                DiagnosticsLog.add("Transkrypcja przerwana w tle – wznowi się po powrocie")
+                DiagnosticsLog.add("Transkrypcja przerwana w tle (\(SkrybaError.describe(error))) – wznowi się po powrocie")
                 store.update(id) { $0.status = .pending }
                 if !queue.contains(id) {
                     queue.insert(id, at: 0)
+                }
+                if !isAppActive {
+                    holdUntilForeground = true
                 }
             } else {
                 let message = SkrybaError.describe(error)
@@ -297,6 +362,7 @@ final class TranscriptionManager {
             endBackgroundTask()
         }
         startNextIfPossible()
+        updateBackgroundKeeper()
     }
 
     private func makeJob(for recording: Recording, settings: SettingsSnapshot) -> TranscriptionJob {
