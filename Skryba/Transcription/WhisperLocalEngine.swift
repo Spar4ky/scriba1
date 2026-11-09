@@ -353,7 +353,7 @@ actor WhisperModelHost {
         DiagnosticsLog.add("Model \(WhisperModels.name(for: variant)): \(firstTime ? "pierwsze przygotowanie (Core ML dopasowuje model do procesora)" : "ładowanie do pamięci")")
         let started = Date()
         do {
-            var config = WhisperKitConfig(modelFolder: folder.path)
+            let config = WhisperKitConfig(modelFolder: folder.path)
             config.tokenizerFolder = WhisperStorage.baseURL
             config.computeOptions = WhisperModelHost.computeOptions
             config.load = false
@@ -383,8 +383,7 @@ actor WhisperModelHost {
         ModelComputeOptions(
             melCompute: .cpuOnly,
             audioEncoderCompute: .cpuAndNeuralEngine,
-            textDecoderCompute: .cpuAndNeuralEngine,
-            prefillCompute: .cpuOnly
+            textDecoderCompute: .cpuAndNeuralEngine
         )
     }
 
